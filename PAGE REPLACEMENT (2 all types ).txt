@@ -1,0 +1,148 @@
+#include <bits/stdc++.h>
+
+using namespace std;
+
+// --- 1. FIFO (First-In, First-Out) ---
+// Time Complexity: O(N) due to queue/set operations being O(1) average.
+int fifo(const vector<int>& pages, int capacity) {
+    unordered_set<int> page_set;
+    queue<int> page_queue;
+    int page_faults = 0;
+
+    for (int page : pages) {
+        if (page_set.find(page) == page_set.end()) {
+            page_faults++;
+            if (page_set.size() == capacity) {
+                int oldest_page = page_queue.front();
+                page_queue.pop();
+                page_set.erase(oldest_page);
+            }
+            page_set.insert(page);
+            page_queue.push(page);
+        }
+    }
+    return page_faults;
+}
+
+// --- 2. LRU (Least Recently Used) - Vector-based O(N) ---
+// Time Complexity: O(N * C) where C is capacity, due to std::find and std::erase.
+int lru(const vector<int>& pages, int capacity) {
+    // Frames: LRU at index 0, MRU at the end
+    vector<int> memory_frames; 
+    int faults = 0;
+
+    for (int page : pages) {
+        auto it = find(memory_frames.begin(), memory_frames.end(), page);
+
+        // Page Hit: Move the page to the MRU end
+        if (it != memory_frames.end()) {
+            memory_frames.erase(it); // O(N) shift
+        } 
+        // Page Fault
+        else {
+            faults++;
+            if (memory_frames.size() == capacity) {
+                // LRU Replacement: Remove the LRU page (at index 0)
+                memory_frames.erase(memory_frames.begin()); // O(N) shift
+            }
+        }
+        
+        // Add to MRU position
+        memory_frames.push_back(page);
+    }
+    return faults;
+}
+
+// --- 3. MRU (Most Recently Used) - Vector-based O(N) ---
+// Time Complexity: O(N * C) due to std::find and std::erase.
+int mru(const vector<int>& pages, int capacity) {
+    // Frames: LRU at index 0, MRU at the end
+    vector<int> memory_frames;
+    int faults = 0;
+
+    for (int page : pages) {
+        auto it = find(memory_frames.begin(), memory_frames.end(), page);
+
+        // Page Hit: Move the page to the MRU end (same as LRU)
+        if (it != memory_frames.end()) {
+            memory_frames.erase(it); // O(N) shift
+        } 
+        // Page Fault
+        else {
+            faults++;
+            if (memory_frames.size() == capacity) {
+                // MRU Replacement: Remove the MRU page (at the back)
+                memory_frames.pop_back(); // O(1) removal
+            }
+        }
+        
+        // Add to MRU position
+        memory_frames.push_back(page);
+    }
+    return faults;
+}
+
+
+// --- 4. OPTIMAL (Helper for finding the page to replace) ---
+// Time Complexity: O(N * C) where C is capacity
+int find_optimal_replace_index(const vector<int>& memory, const vector<int>& pages, int current_index) {
+    int farthest_use = -1;
+    int replace_index = -1;
+
+    for (size_t i = 0; i < memory.size(); ++i) {
+        int page = memory[i];
+        
+        auto it = find(pages.begin() + current_index + 1, pages.end(), page);
+        
+        int next_use_distance;
+        if (it == pages.end()) {
+            next_use_distance = numeric_limits<int>::max(); // Will be replaced
+        } else {
+            next_use_distance = distance(pages.begin(), it);
+        }
+
+        if (next_use_distance > farthest_use) {
+            farthest_use = next_use_distance;
+            replace_index = i;
+        }
+    }
+    return replace_index;
+}
+
+// --- 4. OPTIMAL (Main function) ---
+int optimal(const vector<int>& pages, int capacity) {
+    vector<int> memory;
+    int page_faults = 0;
+
+    for (size_t i = 0; i < pages.size(); ++i) {
+        int page = pages[i];
+        if (find(memory.begin(), memory.end(), page) == memory.end()) {
+            page_faults++;
+            if (memory.size() < capacity) {
+                memory.push_back(page);
+            } else {
+                int replace_idx = find_optimal_replace_index(memory, pages, i);
+                memory[replace_idx] = page;
+            }
+        }
+    }
+    return page_faults;
+}
+
+// --- Main Execution ---
+int main() {
+    // Example reference string and memory capacity
+    vector<int> pages = {7, 0, 1, 2, 0, 3, 0, 4, 2, 3, 0, 3, 2, 1, 2, 0, 1, 7, 0, 1};
+    int capacity = 3;
+
+    cout << "--- Page Replacement Algorithm Comparison ---\n";
+    cout << "Reference String Length: " << pages.size() << "\n";
+    cout << "Memory Frames (Capacity): " << capacity << "\n\n";
+
+    cout << "1. FIFO Page Faults: " << fifo(pages, capacity) << "\n";
+    cout << "2. LRU Page Faults:  " << lru(pages, capacity) << "\n";
+    cout << "3. MRU Page Faults:  " << mru(pages, capacity) << "\n";
+    cout << "4. Optimal Page Faults: " << optimal(pages, capacity) << " (Theoretical Minimum)\n";
+
+    return 0;
+}

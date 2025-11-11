@@ -1,0 +1,107 @@
+#include <bits/stdc++.h>
+
+
+using namespace std;
+
+/**
+ * @brief Simulates the Least Recently Used (LRU) Page Replacement Algorithm.
+ * * LRU replaces the page that has not been used for the longest period of time.
+ * We use a list to maintain the order of usage (front is most recently used)
+ * and a map for O(1) lookup of pages in the frames.
+ * * @param reference_string The sequence of page numbers requested by the CPU.
+ * @param num_frames The total number of available memory frames.
+ */
+void simulate_lru(const vector<int>& reference_string, int num_frames) {
+    // List stores the pages currently in the frames. The front is the MRU (Most Recently Used).
+    list<int> frames;
+    
+    // Map stores the page ID and an iterator pointing to its location in the 'frames' list.
+    unordered_map<int, list<int>::iterator> page_map;
+    
+    int page_faults = 0;
+    int page_hits = 0;
+
+    cout << "\n--- LRU Page Replacement Simulation ---" << endl;
+    cout << "Available Frames: " << num_frames << endl;
+    cout << "Reference String Size: " << reference_string.size() << endl;
+    cout << string(60, '-') << endl;
+    cout << setw(10) << "Reference" << setw(20) << "Frames" << setw(10) << "Result" << endl;
+    cout << string(60, '-') << endl;
+
+    for (int page : reference_string) {
+        bool is_hit = false;
+
+        // --- 1. Check for Page Hit ---
+        if (page_map.count(page)) {
+            // Page Hit: The page is already in memory.
+            is_hit = true;
+            page_hits++;
+            
+            // Move the page to the front (making it MRU)
+            frames.erase(page_map[page]);
+            frames.push_front(page);
+            page_map[page] = frames.begin();
+
+        } else {
+            // --- 2. Page Fault ---
+            page_faults++;
+
+            // --- 2a. Frames are full (Replacement needed) ---
+            if (frames.size() == num_frames) {
+                // The LFU (Least Recently Used) page is at the back of the list.
+                int lru_page = frames.back();
+                
+                // Remove from the list and the map
+                frames.pop_back();
+                page_map.erase(lru_page);
+            }
+            
+            // --- 2b. Insert the new page ---
+            frames.push_front(page);
+            page_map[page] = frames.begin();
+        }
+
+        // --- 3. Output Simulation Step ---
+        
+        // Print current reference
+        cout << setw(10) << page << "  ";
+
+        // Print current frames content
+        cout << "[ ";
+        for (int p : frames) {
+            cout << p << " ";
+        }
+        
+        // Add padding to ensure frames column width is consistent
+        for (size_t i = frames.size(); i < (size_t)num_frames; ++i) {
+            cout << "  ";
+        }
+        cout << "]" << setw(10);
+        
+        // Print result
+        cout << (is_hit ? "HIT" : "FAULT") << endl;
+    }
+
+    cout << string(60, '=') << endl;
+    cout << "Total Page Faults: " << page_faults << endl;
+    cout << "Total Page Hits:   " << page_hits << endl;
+}
+
+
+int main() {
+    // --- Simulation Parameters ---
+    
+    // The sequence of pages requested by the CPU
+    vector<int> reference_string = {1, 2, 3, 4, 1, 2, 5, 1, 2, 3, 4, 5, 6, 7, 8};
+    
+    // The number of physical memory frames available
+    int frames = 3; 
+
+    simulate_lru(reference_string, frames);
+
+    // Example with a different frame count
+    // frames = 4;
+    // simulate_lru(reference_string, frames);
+    
+    return 0;
+}

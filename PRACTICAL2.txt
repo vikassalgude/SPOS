@@ -1,0 +1,257 @@
+#include <bits/stdc++.h>
+using namespace std;
+
+/*
+Two-pass Macroprocessor (simple)
+Files produced:
+ - MNT.txt     : Macro Name Table (macro -> MDT index, param count)
+ - MDT.txt     : Macro Definition Table (indexed lines; parameters replaced by (P,i))
+ - intermediate.txt : source with macro definitions removed (macro calls kept)
+ - expanded.txt : final expanded source after Pass-II
+*/
+
+struct MNTEntry {
+    string name;
+    int mdtIndex;    // starting index in MDT (0-based)
+    int paramCount;
+};
+
+vector<string> MDT; // each entry may contain tokens like (P,1) for parameter 1
+unordered_map<string,MNTEntry> MNT;
+vector<vector<string>> PNTABs; // for each macro (list of parameter names)
+
+static inline string trim(const string &s) {
+    size_t a = s.find_first_not_of(" \t\r\n");
+    if (a==string::npos) return "";
+    size_t b = s.find_last_not_of(" \t\r\n");
+    return s.substr(a,b-a+1);
+}
+
+vector<string> split_tokens(const string &s) {
+    vector<string> t;
+    string cur;
+    istringstream iss(s);
+    while (iss >> cur) t.push_back(cur);
+    return t;
+}
+
+// replace parameter names (&ARG) in a macro body line with (P,i) markers
+string paramize_line(const string &line, const vector<string> &pn) {
+    string res = line;
+    for (int i = 0; i < (int)pn.size(); ++i) {
+        string pname = pn[i];
+        // look for occurrences of &pname
+        string token = "&" + pname;
+        size_t pos = 0;
+        while ((pos = res.find(token, pos)) != string::npos) {
+            // replace with marker (P,i+1)
+            string marker = "(P," + to_string(i+1) + ")";
+            res.replace(pos, token.size(), marker);
+            pos += marker.size();
+        }
+    }
+    return res;
+}
+
+// during expansion, replace (P,i) with actual argument value
+string instantiate_line(const string &line, const vector<string> &actuals) {
+    string res = line;
+    for (int i = 0; i < (int)actuals.size(); ++i) {
+        string marker = "(P," + to_string(i+1) + ")";
+        size_t pos = 0;
+        while ((pos = res.find(marker, pos)) != string::npos) {
+            res.replace(pos, marker.size(), actuals[i]);
+            pos += actuals[i].size();
+        }
+    }
+    return res;
+}
+
+int main() {
+    ios::sync_with_stdio(false);
+    cin.tie(nullptr);
+
+    // Read source (input.asm). If not present, use sample.
+    vector<string> source;
+    ifstream fin("input.asm");
+    if (!fin) {
+        // sample demonstrating macros
+        source = {
+            "START 100",
+            "INCR MACRO &ARG",
+            "    LOAD &ARG",
+            "    ADD  ONE",
+            "    STORE &ARG",
+            "MEND",
+            "",
+            "ONE    WORD 1",
+            "A      WORD 5",
+            "B      WORD 10",
+            "       INCR A",
+            "       INCR B",
+            "END"
+        };
+        cout << "input.asm not found - using sample program.\n";
+    } else {
+        string line;
+        while (getline(fin,line)) source.push_back(line);
+        fin.close();
+    }
+
+    // -------- PASS I: build MNT, MDT, write intermediate (without macro defs) ----------
+    ofstream inter_out("intermediate.txt");
+    MDT.clear(); MNT.clear(); PNTABs.clear();
+
+    bool inMacro = false;
+    vector<string> curPNTAB;
+    string curMacroName;
+    int mdtIndexCounter = 0;
+
+    for (size_t lineno = 0; lineno < source.size(); ++lineno) {
+        string raw = source[lineno];
+        string line = trim(raw);
+        if (line.empty()) { inter_out << "\n"; continue; }
+
+        // tokenize first two tokens to check header/opcode
+        vector<string> tok = split_tokens(line);
+        if (tok.size() == 0) { inter_out << "\n"; continue; }
+
+        // Detect start of macro definition:
+        // either: NAME MACRO &A,&B  (label + MACRO) or MACRO as first token (less common)
+        bool startsMacro = false;
+        if (tok.size() >= 2 && (tok[1] == "MACRO" || tok[1] == "macro")) {
+            startsMacro = true;
+            curMacroName = tok[0];
+            // parse param list if present as tok[2] or rest of line after "MACRO"
+            string paramPart;
+            size_t posMacro = line.find("MACRO");
+            if (posMacro == string::npos) posMacro = line.find("macro");
+            if (posMacro != string::npos) {
+                paramPart = trim(line.substr(posMacro + 5));
+            }
+            curPNTAB.clear();
+            if (!paramPart.empty()) {
+                // params are separated by commas, may begin with &
+                string tmp; stringstream ss(paramPart);
+                while (getline(ss,tmp,',')) {
+                    tmp = trim(tmp);
+                    if (!tmp.empty() && tmp[0] == '&') tmp = tmp.substr(1);
+                    curPNTAB.push_back(tmp);
+                }
+            }
+        }
+
+        if (startsMacro) {
+            // register in MNT with current MDT index
+            MNT[curMacroName] = {curMacroName, mdtIndexCounter, (int)curPNTAB.size()};
+            PNTABs.push_back(curPNTAB);
+            inMacro = true;
+            continue; // do not write macro header to intermediate
+        }
+
+        if (inMacro) {
+            // check for MEND
+            // we accept lines with token "MEND" as macro end
+            if (tok[0] == "MEND" || tok[0] == "mend") {
+                MDT.push_back("MEND");
+                ++mdtIndexCounter;
+                inMacro = false;
+                curPNTAB.clear();
+                curMacroName.clear();
+                continue; // skip writing MEND to intermediate
+            } else {
+                // parameterize this line: replace &param with (P,i)
+                // use last added PNTAB (PNTABs.back())
+                string paramized = paramize_line(line, PNTABs.back());
+                MDT.push_back(paramized);
+                ++mdtIndexCounter;
+                continue; // do not write macro body to intermediate
+            }
+        } else {
+            // normal line - write to intermediate unchanged
+            inter_out << line << "\n";
+        }
+    }
+    inter_out.close();
+
+    // write MNT and MDT to files
+    ofstream mnt_out("MNT.txt"), mdt_out("MDT.txt");
+    mnt_out << "Name\tMDTIndex\tParamCount\n";
+    for (auto &kv : MNT) {
+        mnt_out << kv.first << "\t" << kv.second.mdtIndex << "\t" << kv.second.paramCount << "\n";
+    }
+    mnt_out.close();
+
+    mdt_out << "Index\tMDTLine\n";
+    for (size_t i = 0; i < MDT.size(); ++i) mdt_out << i << "\t" << MDT[i] << "\n";
+    mdt_out.close();
+
+    cout << "Pass I completed: generated MNT.txt, MDT.txt, intermediate.txt\n";
+
+    // ---------------- PASS II: expand macros from intermediate ----------------
+    ifstream inter_in("intermediate.txt");
+    ofstream exp_out("expanded.txt");
+    string iline;
+    while (getline(inter_in, iline)) {
+        string s = trim(iline);
+        if (s.empty()) { exp_out << "\n"; continue; }
+        vector<string> tok = split_tokens(s);
+        if (tok.size() == 0) { exp_out << iline << "\n"; continue; }
+
+        // Check if opcode (second token) is a macro name OR first token is macro (in case label omitted)
+        string macroCallName;
+        vector<string> arglist;
+
+        // handle two common call formats:
+        // LABEL  MACRONAME  arg1,arg2
+        // MACRONAME arg1,arg2
+        if (tok.size() >= 2) {
+            // tok[1] might be macro name
+            if (MNT.find(tok[1]) != MNT.end()) {
+                macroCallName = tok[1];
+                // collect operand part (rest of line after macro name)
+                size_t pos = s.find(tok[1]);
+                string rest = trim(s.substr(pos + tok[1].size()));
+                if (!rest.empty()) {
+                    // split by commas
+                    string tmp; stringstream ss(rest);
+                    while (getline(ss,tmp,',')) { arglist.push_back(trim(tmp)); }
+                }
+            }
+        }
+        if (macroCallName.empty()) {
+            // maybe first token is macro itself (no label)
+            if (MNT.find(tok[0]) != MNT.end()) {
+                macroCallName = tok[0];
+                size_t pos = s.find(tok[0]);
+                string rest = trim(s.substr(pos + tok[0].size()));
+                if (!rest.empty()) {
+                    string tmp; stringstream ss(rest);
+                    while (getline(ss,tmp,',')) { arglist.push_back(trim(tmp)); }
+                }
+            }
+        }
+
+        if (macroCallName.empty()) {
+            // not a macro call -> copy line as is
+            exp_out << s << "\n";
+        } else {
+            // expand macro
+            MNTEntry me = MNT[macroCallName];
+            // pad actuals if fewer provided
+            vector<string> actuals = arglist;
+            while ((int)actuals.size() < me.paramCount) actuals.push_back("");
+            // expand from MDT starting at me.mdtIndex until "MEND"
+            for (int idx = me.mdtIndex; idx < (int)MDT.size(); ++idx) {
+                if (MDT[idx] == "MEND") break;
+                string inst = instantiate_line(MDT[idx], actuals);
+                exp_out << inst << "\n";
+            }
+        }
+    }
+
+    inter_in.close(); exp_out.close();
+    cout << "Pass II completed: generated expanded.txt\n";
+    cout << "Files: MNT.txt MDT.txt intermediate.txt expanded.txt\n";
+    return 0;
+}

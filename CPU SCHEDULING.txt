@@ -1,0 +1,307 @@
+#include <bits/stdc++.h>
+
+using namespace std;
+
+// --- 1. Process Structure ---
+// Defines the essential properties for every process.
+struct Process {
+    int pid;            // Process ID
+    int arrival_time;   // Time process enters the ready queue
+    int burst_time;     // Total time required for execution
+    int priority;       // Priority value (lower number = higher priority)
+    int remaining_time; // Used for preemptive algorithms (how much time is left)
+    int completion_time;
+    int turnaround_time;
+    int waiting_time;
+};
+
+// --- 2. Metrics Calculation Helper ---
+
+/**
+ * @brief Calculates and prints the performance metrics (AWT and ATT) for a simulation.
+ * * @param processes The vector of processes with calculated completion times.
+ * @param algo_name The name of the scheduling algorithm.
+ */
+void calculateMetrics(vector<Process>& processes, const string& algo_name) {
+    int n = processes.size();
+    double total_wt = 0;
+    double total_tt = 0;
+
+    // Calculate Turnaround Time (TT = CT - AT) and Waiting Time (WT = TT - BT)
+    for (int i = 0; i < n; i++) {
+        processes[i].turnaround_time = processes[i].completion_time - processes[i].arrival_time;
+        processes[i].waiting_time = processes[i].turnaround_time - processes[i].burst_time;
+        total_wt += processes[i].waiting_time;
+        total_tt += processes[i].turnaround_time;
+    }
+
+    // Display results table
+    cout << "\n--- " << algo_name << " Results ---" << endl;
+    cout << setw(5) << "PID" << setw(10) << "AT" << setw(10) << "BT"
+         << setw(10) << "CT" << setw(10) << "TT" << setw(10) << "WT" << endl;
+    cout << string(55, '-') << endl;
+
+    // Sort by PID for standard output order
+    sort(processes.begin(), processes.end(), [](const Process& a, const Process& b) {
+        return a.pid < b.pid;
+    });
+
+    for (const auto& p : processes) {
+        cout << setw(5) << p.pid << setw(10) << p.arrival_time << setw(10) << p.burst_time
+             << setw(10) << p.completion_time << setw(10) << p.turnaround_time
+             << setw(10) << p.waiting_time << endl;
+    }
+
+    // Print Averages
+    cout << fixed << setprecision(2);
+    cout << "\nAverage Waiting Time (AWT): " << total_wt / n << endl;
+    cout << "Average Turnaround Time (ATT): " << total_tt / n << endl;
+    cout << string(60, '=') << "\n" << endl;
+}
+
+// --- 3. FCFS (First-Come, First-Served) - Non-Preemptive ---
+
+/**
+ * @brief Simulates FCFS scheduling. Processes are executed in arrival order.
+ * * @param processes The vector of processes to simulate.
+ */
+void fcfs(vector<Process> processes) {
+    // 1. Sort processes by Arrival Time (AT)
+    sort(processes.begin(), processes.end(), [](const Process& a, const Process& b) {
+        return a.arrival_time < b.arrival_time;
+    });
+
+    int current_time = 0;
+ 
+    for (int i = 0; i < processes.size(); ++i) {
+        // If the CPU is idle, jump time to the current process's arrival time
+        if (current_time < processes[i].arrival_time) {
+            current_time = processes[i].arrival_time;
+        }
+
+        // Process runs to completion (Non-Preemptive)
+        current_time += processes[i].burst_time;
+        processes[i].completion_time = current_time;
+    }
+
+    calculateMetrics(processes, "FCFS (First-Come, First-Served)");
+}
+
+// --- 4. SJF (Shortest Job First) - Preemptive (SRTF) ---
+
+/**
+ * @brief Simulates Preemptive SJF (SRTF). At any time, the job with the smallest remaining time is chosen.
+ * * @param processes The vector of processes to simulate.
+ */
+void sjf_preemptive(vector<Process> processes) {
+    int n = processes.size();
+    int current_time = 0;
+    int completed_count = 0;
+
+    // Initialize remaining time (RT) to Burst Time (BT)
+    for (auto& p : processes) {
+        p.remaining_time = p.burst_time;
+    }
+
+    while (completed_count < n) {
+        int shortest_job_index = -1;
+        int min_remaining_time = INT_MAX;
+
+        // Find the shortest job that has arrived and is not yet complete
+        for (int i = 0; i < n; ++i) {
+            if (processes[i].arrival_time <= current_time && processes[i].remaining_time > 0) {
+                if (processes[i].remaining_time < min_remaining_time) {
+                    min_remaining_time = processes[i].remaining_time;
+                    shortest_job_index = i;
+                }
+            }
+        }
+
+        if (shortest_job_index == -1) {
+            // CPU is idle, advance time to the next arrival
+            current_time++;
+        } else {
+            // Execute the selected process for one time unit (preemption check happens every unit)
+            processes[shortest_job_index].remaining_time--;
+            current_time++;
+
+            // Check if the process completed
+            if (processes[shortest_job_index].remaining_time == 0) {
+                processes[shortest_job_index].completion_time = current_time;
+                completed_count++;
+            }
+        }
+    }
+
+    calculateMetrics(processes, "SJF (Preemptive - SRTF)");
+}
+
+// --- 5. Priority - Non-Preemptive ---
+
+/**
+ * @brief Simulates Priority Non-Preemptive scheduling. The highest priority job (lowest number) runs to completion.
+ * * @param processes The vector of processes to simulate.
+ */
+void priority_non_preemptive(vector<Process> processes) {
+    int n = processes.size();
+    int current_time = 0;
+    int completed_count = 0;
+
+    vector<bool> is_completed(n, false);
+
+    while (completed_count < n) {
+        int highest_priority_index = -1;
+        int max_priority = INT_MAX; // Lower number means higher priority (INT_MAX is the lowest priority)
+
+        // Find the highest priority job that has arrived
+        for (int i = 0; i < n; ++i) {
+            if (processes[i].arrival_time <= current_time && !is_completed[i]) {
+                if (processes[i].priority < max_priority) {
+                    max_priority = processes[i].priority;
+                    highest_priority_index = i;
+                }
+            }
+        }
+
+        if (highest_priority_index == -1) {
+            // CPU is idle, advance time to the next arrival
+            int next_arrival = INT_MAX;
+            for (int i = 0; i < n; ++i) {
+                if (!is_completed[i]) {
+                    next_arrival = min(next_arrival, processes[i].arrival_time);
+                }
+            }
+            if (next_arrival != INT_MAX) {
+                current_time = next_arrival;
+            } else {
+                break;
+            }
+        } else {
+            // Process runs non-preemptively to completion
+            int index = highest_priority_index;
+            current_time += processes[index].burst_time;
+            processes[index].completion_time = current_time;
+            is_completed[index] = true;
+            completed_count++;
+        }
+    }
+
+    calculateMetrics(processes, "Priority (Non-Preemptive)");
+}
+
+// --- 6. Round Robin - Preemptive ---
+
+/**
+ * @brief Simulates Round Robin scheduling. Processes run for a fixed time quantum.
+ * * @param processes The vector of processes to simulate.
+ * @param quantum The time quantum for Round Robin.
+ */
+void round_robin(vector<Process> processes, int quantum) {
+    int n = processes.size();
+    int current_time = 0;
+    int completed_count = 0;
+
+    // Initialize remaining time (RT) to Burst Time (BT)
+    for (auto& p : processes) {
+        p.remaining_time = p.burst_time;
+    }
+
+    // Sort processes by arrival time to properly fill the initial queue
+    sort(processes.begin(), processes.end(), [](const Process& a, const Process& b) {
+        return a.arrival_time < b.arrival_time;
+    });
+
+    // Ready Queue stores indices of processes
+    queue<int> ready_queue;
+    vector<bool> in_queue(n, false); // Tracks if a process is already in the queue
+    int next_arrival_index = 0;
+
+    // Initial check to push the first arriving process(es)
+    if (processes[0].arrival_time == 0) {
+        ready_queue.push(0);
+        in_queue[0] = true;
+        next_arrival_index = 1;
+    }
+
+    while (completed_count < n) {
+        // Handle idle CPU and initial queue setup
+        if (ready_queue.empty()) {
+            if (next_arrival_index < n) {
+                // Advance time to the arrival of the next unqueued process
+                current_time = processes[next_arrival_index].arrival_time;
+                ready_queue.push(next_arrival_index);
+                in_queue[next_arrival_index] = true;
+                next_arrival_index++;
+            } else {
+                break;
+            }
+        }
+
+        // Get the process from the front
+        int current_process_index = ready_queue.front();
+        ready_queue.pop();
+        in_queue[current_process_index] = false;
+
+        // Execution time is min(quantum, remaining time)
+        int execution_time = min(quantum, processes[current_process_index].remaining_time);
+
+        // Execute and update time
+        processes[current_process_index].remaining_time -= execution_time;
+        current_time += execution_time;
+
+        // Add new arrivals to the ready queue *during* this execution time
+        for (int i = next_arrival_index; i < n; ++i) {
+            if (processes[i].arrival_time <= current_time && !in_queue[i]) {
+                ready_queue.push(i);
+                in_queue[i] = true;
+                next_arrival_index++;
+            } else if (processes[i].arrival_time > current_time) {
+                break; // Since sorted by AT, we can stop
+            }
+        }
+ 
+        // Check if the process finished
+        if (processes[current_process_index].remaining_time == 0) {
+            processes[current_process_index].completion_time = current_time;
+            completed_count++;
+        } else {
+            // Process didn't finish, add it back to the end of the ready queue
+            ready_queue.push(current_process_index);
+            in_queue[current_process_index] = true;
+        }
+    }
+
+    calculateMetrics(processes, "Round Robin (Preemptive, Quantum = " + to_string(quantum) + ")");
+}
+
+
+int main() {
+    // Standard data set to test all algorithms
+    vector<Process> base_processes = {
+        {1, 0, 10, 3, 0},   // PID, AT, BT, PRIORITY, RT (RT is temp 0)
+        {2, 1, 5, 1, 0},
+        {3, 2, 2, 4, 0},
+        {4, 3, 4, 2, 0},
+        {5, 5, 8, 5, 0}
+    };
+
+    cout << "CPU Scheduling Algorithms Simulation" << endl;
+    cout << "----------------------------------" << endl;
+    cout << "Initial Processes Data:\n";
+    cout << setw(5) << "PID" << setw(10) << "AT" << setw(10) << "BT" << setw(10) << "Priority" << endl;
+    cout << string(35, '-') << endl;
+    for (const auto& p : base_processes) {
+        cout << setw(5) << p.pid << setw(10) << p.arrival_time << setw(10) << p.burst_time << setw(10) << p.priority << endl;
+    }
+    cout << string(40, '=') << "\n" << endl;
+ 
+    // Each function receives a copy of the processes vector to ensure independent simulation
+    fcfs(base_processes);
+    sjf_preemptive(base_processes);
+    priority_non_preemptive(base_processes);
+
+    int rr_quantum = 3;
+    round_robin(base_processes, rr_quantum);
+
+    return 0;
+}

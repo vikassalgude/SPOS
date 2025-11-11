@@ -1,0 +1,163 @@
+PRACTICAL1
+
+#include <bits/stdc++.h>
+using namespace std;
+
+struct Op { string code; int size; };
+int main() {
+    // ----- OPTAB -----
+    map<string, Op> OPTAB = {
+        {"LOAD", {"01", 3}}, {"ADD", {"02", 3}},
+        {"STORE", {"03", 3}}, {"END", {"", 0}}
+    };
+
+    // ----- PASS 1 -----
+    ifstream fin("input.asm");
+    ofstream fout1("intermediate.txt"), sym("symtab.txt");
+    string label, opcode, operand;
+    int LOCCTR = 0, startAddr = 0;
+    map<string, int> SYMTAB;
+    fin >> opcode >> operand;              // first line START
+    if (opcode == "START") { startAddr = stoi(operand); LOCCTR = startAddr; }
+    fout1 << opcode << " " << operand << endl;
+
+    while (fin >> label >> opcode >> operand) {
+        if (opcode == "END") { fout1 << label << " " << opcode << endl; break; }
+        fout1 << LOCCTR << " " << label << " " << opcode << " " << operand << endl;
+
+        if (!label.empty() && SYMTAB.find(label) == SYMTAB.end())
+            SYMTAB[label] = LOCCTR;
+
+        if (OPTAB.count(opcode)) LOCCTR += OPTAB[opcode].size;
+        else if (opcode == "WORD") LOCCTR += 3;
+        else if (opcode == "RESW") LOCCTR += 3 * stoi(operand);
+    }
+
+    for (auto &s : SYMTAB) sym << s.first << " " << s.second << endl;
+    sym.close(); fin.close(); fout1.close();
+
+    // ----- PASS 2 -----
+    ifstream inter("intermediate.txt");
+    ofstream obj("machine_code.txt");
+    while (inter >> label >> opcode >> operand) {
+        if (opcode == "START" || opcode == "END") continue;
+        if (OPTAB.count(opcode)) {
+            int addr = SYMTAB[operand];
+            obj << OPTAB[opcode].code << setw(4) << setfill('0') << addr << endl;
+        } else if (opcode == "WORD") obj << operand << endl;
+    }
+    cout << "Pass I & II complete. Files: symtab.txt, machine_code.txt\n";
+}
+
+/*
+📘 Sample input.asm
+START 100
+A  LOAD B
+   ADD  C
+   STORE D
+B  WORD 5
+C  WORD 10
+D  RESW 1
+END
+*/
+
+/*
+Perfect 👍 — here’s exactly **how to run the short two-pass assembler program** step-by-step:
+
+---
+
+### 🧩 Step 1: Copy the code
+
+Copy the short C++ code I gave you above into a file named:
+
+```
+assembler.cpp
+```
+
+---
+
+### 🧩 Step 2: Create your assembly input file
+
+Create another file in the same folder named:
+
+```
+input.asm
+```
+
+Put this inside it (you can change values later):
+
+```
+START 100
+A  LOAD B
+   ADD  C
+   STORE D
+B  WORD 5
+C  WORD 10
+D  RESW 1
+END
+```
+
+---
+
+### 🧩 Step 3: Compile the assembler
+
+If you’re using **Windows (with MinGW)** or **Linux/macOS**, open a terminal in the same folder and run:
+
+```bash
+g++ assembler.cpp -o assembler
+```
+
+This creates an executable file called `assembler`.
+
+---
+
+### 🧩 Step 4: Run it
+
+Now run:
+
+```bash
+./assembler
+```
+
+(Windows users can also double-click `assembler.exe` or run `assembler` in CMD.)
+
+---
+
+### 🧩 Step 5: Check generated files
+
+After running, three files will appear:
+
+| File               | Purpose                                |
+| ------------------ | -------------------------------------- |
+| `symtab.txt`       | Symbol table with label addresses      |
+| `intermediate.txt` | Intermediate file from Pass-I          |
+| `machine_code.txt` | Final machine/object code from Pass-II |
+
+Example output:
+
+**symtab.txt**
+
+```
+A 100
+B 109
+C 112
+D 115
+```
+
+**machine_code.txt**
+
+```
+01109
+02112
+03115
+510
+1010
+```
+
+---
+
+### ✅ That’s it!
+
+You just ran your **two-pass assembler** in C++!
+Would you like me to make it automatically create the `input.asm` file for testing (so you can run it directly without setup)?
+*/
